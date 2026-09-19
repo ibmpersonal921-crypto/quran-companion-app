@@ -79,6 +79,7 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                 }}
                 .active {{ background: #065F46; color: #34D399; animation: pulse 1.5s infinite; }}
                 .inactive {{ background: #374151; color: #9CA3AF; }}
+                .error-state {{ background: #7F1D1D; color: #FCA5A5; }}
                 @keyframes pulse {{
                     0% {{ box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); }}
                     70% {{ box-shadow: 0 0 0 12px rgba(52, 211, 153, 0); }}
@@ -93,6 +94,7 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                     color: #A7F3D0;
                     min-height: 80px;
                     text-align: left;
+                    word-break: break-word;
                 }}
             </style>
         </head>
@@ -107,7 +109,7 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
 
                 <div id="logBox">
                     <b>Live Call Feed:</b>
-                    <p id="statusText" style="color: #9CA3AF; margin-top: 5px;">Click 'Start Voice Call' to initiate live bidirectional streaming...</p>
+                    <p id="statusText" style="color: #9CA3AF; margin-top: 5px;">Click 'Start Voice Call' to initiate live streaming...</p>
                 </div>
             </div>
 
@@ -120,9 +122,17 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                 let scriptProcessor;
 
                 async function connectLiveCall() {{
+                    document.getElementById('statusText').innerText = "Requesting microphone access...";
+                    
+                    try {{
+                        micStream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
+                    }} catch (err) {{
+                        showError("Microphone access denied or unavailable: " + err.message);
+                        return;
+                    }}
+
                     document.getElementById('statusText').innerText = "Connecting to Gemini Live API...";
                     
-                    // Gemini Multimodal Live WebSocket Endpoint
                     const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${{API_KEY}}`;
                     
                     try {{
@@ -135,10 +145,9 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                             document.getElementById('status').innerText = '🟢 LIVE CALL CONNECTED';
                             document.getElementById('statusText').innerText = "Call active. Start reciting out loud!";
                             
-                            // Send Session Setup Configuration
                             const setupMsg = {{
                                 setup: {{
-                                    model: "models/gemini-2.0-flash-exp",
+                                    model: "models/gemini-2.0-flash",
                                     generationConfig: {{
                                         responseModalities: ["AUDIO"],
                                         speechConfig: {{
@@ -167,7 +176,6 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                                     data = JSON.parse(event.data);
                                 }}
 
-                                // Play real-time audio response from Gemini
                                 if (data.serverContent && data.serverContent.modelTurn) {{
                                     const parts = data.serverContent.modelTurn.parts;
                                     for (let part of parts) {{
@@ -182,19 +190,25 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                             }}
                         }};
 
-                        ws.onclose = () => {{ disconnectLiveCall(); }};
+                        ws.onclose = (event) => {{
+                            if (event.code !== 1000) {{
+                                showError(`WebSocket closed unexpectedly (Code: ${{event.code}}, Reason: ${{event.reason || 'Authentication or API Key restriction'}}).`);
+                            }} else {{
+                                disconnectLiveCall();
+                            }}
+                        }};
+
                         ws.onerror = (err) => {{
-                            document.getElementById('statusText').innerText = "Connection error. Ensure Gemini Multimodal Live API is enabled for your API Key.";
+                            showError("WebSocket encountered a connection error. Verify your GEMINI_API_KEY supports Gemini 2.0 Live API.");
                         }};
 
                     }} catch (e) {{
-                        document.getElementById('statusText').innerText = "Error starting call: " + e.message;
+                        showError("Error starting call: " + e.message);
                     }}
                 }}
 
                 async function startMicStreaming() {{
                     audioCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate: 16000 }});
-                    micStream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
                     const source = audioCtx.createMediaStreamSource(micStream);
                     
                     scriptProcessor = audioCtx.createScriptProcessor(2048, 1, 1);
@@ -210,7 +224,6 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                             pcm16[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
                         }}
                         
-                        // Convert PCM ArrayBuffer to Base64
                         let binary = '';
                         const bytes = new Uint8Array(pcm16.buffer);
                         for (let i = 0; i < bytes.byteLength; i++) {{
@@ -254,6 +267,18 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                     }} catch (e) {{
                         console.error("Audio playback error:", e);
                     }}
+                }}
+
+                function showError(msg) {{
+                    if (ws) ws.close();
+                    if (micStream) micStream.getTracks().forEach(track => track.stop());
+                    if (audioCtx) audioCtx.close();
+                    
+                    document.getElementById('startBtn').style.display = 'inline-block';
+                    document.getElementById('stopBtn').style.display = 'none';
+                    document.getElementById('status').className = 'status-badge error-state';
+                    document.getElementById('status').innerText = '⚠️ Connection Error';
+                    document.getElementById('statusText').innerText = msg;
                 }}
 
                 function disconnectLiveCall() {{
