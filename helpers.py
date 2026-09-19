@@ -66,19 +66,47 @@ def get_audio_urls(surah_num, reciter_key):
     return {a["numberInSurah"]: a["audio"] for a in data if a.get("audio")}
 
 def ask_llm(messages):
-    api_key = get_secret("GROQ_API_KEY")
+    api_key = get_secret("GEMINI_API_KEY") or get_secret("GROQ_API_KEY")
     if not api_key:
-        return "Error: GROQ_API_KEY is not set in Streamlit secrets."
+        return "Error: GEMINI_API_KEY is not set in Streamlit secrets."
+
+    system_instruction = None
+    contents = []
+
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content", "")
+
+        if role == "system":
+            system_instruction = {"parts": [{"text": content}]}
+        else:
+            gemini_role = "model" if role == "assistant" else "user"
+            contents.append({
+                "role": gemini_role,
+                "parts": [{"text": content}]
+            })
+
+    payload = {"contents": contents}
+    if system_instruction:
+        payload["systemInstruction"] = system_instruction
+
+    # Primary attempt: Gemini 2.5 Flash
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     
-    payload = {
-        "model": "llama3-8b-8192",
-        "messages": messages,
-        "temperature": 0.2
-    }
-    r = requests.post("https://api.groq.com/openai/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}"}, json=payload, timeout=30)
-    if r.status_code == 200:
-        return r.json()["choices"][0]["message"]["content"]
-    return f"API Error: {r.status_code} - {r.text}"
+    try:
+        r = requests.post(url, json=payload, timeout=30)
+        if r.status_code == 200:
+            return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        
+        # Fallback attempt: Gemini 1.5 Flash
+        fallback_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        r_fb = requests.post(fallback_url, json=payload, timeout=30)
+        if r_fb.status_code == 200:
+            return r_fb.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+        return f"Gemini API Error {r.status_code}: {r.text}"
+    except Exception as e:
+        return f"Error connecting to Gemini API: {str(e)}"
 
 def evaluate_speech(audio_bytes, target_arabic):
     recognizer = sr.Recognizer()
