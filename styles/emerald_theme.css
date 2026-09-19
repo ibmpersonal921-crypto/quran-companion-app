@@ -1,0 +1,64 @@
+.stApp {
+    background: linear-gradient(150deg, #030A06 0%, #081E13 45%, #040D08 100%) !important;
+    color: #E2E8F0;
+}
+
+[data-testid="stSidebar"] {
+    background-color: #06150D !important;
+    border-right: 1px solid rgba(52, 211, 153, 0.12) !important;
+}
+
+.custom-card {
+    background: linear-gradient(135deg, rgba(12, 34, 23, 0.75) 0%, rgba(6, 18, 12, 0.85) 100%);
+    border: 1px solid rgba(52, 211, 153, 0.2);
+    border-radius: 20px;
+    padding: 28px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(12px);
+    margin-bottom: 24px;
+}
+
+.arabic-text {
+    font-family: 'Amiri', 'Traditional Arabic', serif;
+    font-size: 34px;
+    line-height: 2.3;
+    color: #F6E05E;
+    text-align: center;
+    direction: rtl;
+    padding: 10px 0;
+}
+
+.ayah-no {
+    color: #34D399;
+    font-size: 24px;
+    margin: 0 6px;
+}
+
+.transliteration {
+    font-style: italic;
+    color: #A0AEC0;
+    text-align: center;
+    font-size: 15px;
+    margin-top: 10px;
+}
+
+.translation {
+    color: #E2E8F0;
+    text-align: center;
+    font-size: 16px;
+    line-height: 1.6;
+    margin-top: 12px;
+}
+
+.stButton > button {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    color: #FFFFFF;
+    border: 1px solid rgba(52, 211, 153, 0.3);
+    border-radius: 12px;
+    padding: 10px 22px;
+    font-weight: 600;
+}
+
+.stProgress > div > div > div > div {
+    background-color: #34D399 !important;
+}
