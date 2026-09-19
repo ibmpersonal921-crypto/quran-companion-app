@@ -90,15 +90,15 @@ def ask_llm(messages):
     if system_instruction:
         payload["systemInstruction"] = system_instruction
 
-    # Primary attempt: Gemini 2.5 Flash
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    # Primary model endpoint: Gemini 3.6 Flash
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={api_key}"
     
     try:
         r = requests.post(url, json=payload, timeout=30)
         if r.status_code == 200:
             return r.json()["candidates"][0]["content"]["parts"][0]["text"]
         
-        # Fallback attempt: Gemini 1.5 Flash
+        # Fallback model endpoint: Gemini 1.5 Flash
         fallback_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
         r_fb = requests.post(fallback_url, json=payload, timeout=30)
         if r_fb.status_code == 200:
