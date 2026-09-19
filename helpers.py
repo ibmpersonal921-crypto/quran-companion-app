@@ -66,7 +66,7 @@ def get_audio_urls(surah_num, reciter_key):
     return {a["numberInSurah"]: a["audio"] for a in data if a.get("audio")}
 
 def ask_llm(messages):
-    api_key = get_secret("GEMINI_API_KEY") or get_secret("GROQ_API_KEY")
+    api_key = get_secret("GEMINI_API_KEY")
     if not api_key:
         return "Error: GEMINI_API_KEY is not set in Streamlit secrets."
 
@@ -90,43 +90,12 @@ def ask_llm(messages):
     if system_instruction:
         payload["systemInstruction"] = system_instruction
 
-    # Primary model endpoint: Gemini 3.6 Flash
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={api_key}"
     
     try:
         r = requests.post(url, json=payload, timeout=30)
         if r.status_code == 200:
             return r.json()["candidates"][0]["content"]["parts"][0]["text"]
-        
-        # Fallback model endpoint: Gemini 1.5 Flash
-        fallback_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-        r_fb = requests.post(fallback_url, json=payload, timeout=30)
-        if r_fb.status_code == 200:
-            return r_fb.json()["candidates"][0]["content"]["parts"][0]["text"]
-
         return f"Gemini API Error {r.status_code}: {r.text}"
     except Exception as e:
         return f"Error connecting to Gemini API: {str(e)}"
-
-def evaluate_speech(audio_bytes, target_arabic):
-    recognizer = sr.Recognizer()
-    try:
-        with sr.AudioFile(io.BytesIO(audio_bytes)) as source:
-            recorded = recognizer.record(source)
-        spoken = recognizer.recognize_google(recorded, language="ar-SA")
-    except Exception:
-        spoken = "Could not clearly capture Arabic speech."
-
-    prompt = f"Expected Verse: {target_arabic}\nStudent Recited: {spoken}\nProvide feedback on pronunciation accuracy (Talaffuz) and Makhraj in English and Urdu."
-    feedback = ask_llm([{"role": "system", "content": "You are a Quran Tajweed Teacher."}, {"role": "user", "content": prompt}])
-
-    tts_stream = None
-    try:
-        tts = gTTS(text=feedback, lang='ur')
-        tts_stream = io.BytesIO()
-        tts.write_to_fp(tts_stream)
-        tts_stream.seek(0)
-    except Exception:
-        pass
-
-    return spoken, feedback, tts_stream
