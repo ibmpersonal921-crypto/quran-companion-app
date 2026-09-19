@@ -330,4 +330,3 @@ elif nav == "🧠 AI Chat Companion":
                 messages.extend(st.session_state.chat_history)
                 reply = helpers.ask_llm(messages)
                 st.markdown(reply)
-                st.session_state.chat_history.append({"role": "assistant", "content": reply})
