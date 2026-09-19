@@ -11,7 +11,6 @@ try:
 except Exception:
     pass
 
-# Session State
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
@@ -19,18 +18,18 @@ with st.sidebar:
     st.markdown("## 📖 Quran Companion")
     st.caption("Live AI Tajweed Teacher")
     st.markdown("---")
-    nav = st.radio("Navigation", ["📞 Live Voice Call (Real-time Audio)", "📖 Browse Quran", "🧠 AI Chat Companion"], label_visibility="collapsed")
+    nav = st.radio("Navigation", ["📞 Live Voice Call", "📖 Browse Quran", "🧠 AI Chat Companion"], label_visibility="collapsed")
     st.markdown("---")
     reciter_key = st.selectbox("Preferred Qari", list(helpers.RECITERS.keys()), format_func=lambda x: helpers.RECITERS[x])
 
 api_key = helpers.get_secret("GEMINI_API_KEY")
 
 # 📞 LIVE REALTIME VOICE CALL
-if nav == "📞 Live Voice Call (Real-time Audio)":
-    st.markdown("<h1>📞 Real-time Voice Call with AI Tajweed Teacher</h1>", unsafe_allow_html=True)
-    st.caption("Start a duplex audio call. Recite out loud—the AI will listen continuously and speak back immediately to correct any Tajweed or pronunciation mistake.")
+if nav == "📞 Live Voice Call":
+    st.markdown("<h1>📞 Real-Time Live Voice Call</h1>", unsafe_allow_html=True)
+    st.caption("Full-duplex audio call with Gemini 2.0 Live API. Recite continuously out loud—the AI will listen in real time and interrupt via voice if you make a mistake.")
 
-    target_verse = st.text_input("Verse to Recite:", "إِذَا جَآءَ نَصْرُ ٱللَّهِ وَٱلْفَتْحُ")
+    target_verse = st.text_input("Verse to Practice:", "إِذَا جَآءَ نَصْرُ ٱللَّهِ وَٱلْفَتْحُ")
 
     st.markdown(f"""
     <div class="custom-card" style="text-align: center; margin-bottom: 20px;">
@@ -42,20 +41,19 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
     if not api_key:
         st.error("⚠️ GEMINI_API_KEY is missing from Streamlit secrets.")
     else:
-        # Gemini WebSocket Realtime Audio HTML/JS Component
         live_audio_html = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <style>
-                .call-container {{
+                .call-card {{
                     background: #07150E;
                     border: 2px solid #34D399;
                     border-radius: 20px;
                     padding: 30px;
                     text-align: center;
                     color: white;
-                    font-family: Arial, sans-serif;
+                    font-family: system-ui, -apple-system, sans-serif;
                 }}
                 .btn {{
                     padding: 16px 36px;
@@ -65,11 +63,10 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                     border: none;
                     cursor: pointer;
                     margin: 10px;
-                    transition: 0.2s;
                 }}
                 .btn-start {{ background: #10B981; color: white; box-shadow: 0 0 15px rgba(16,185,129,0.4); }}
                 .btn-stop {{ background: #EF4444; color: white; }}
-                .status-badge {{
+                .badge {{
                     display: inline-block;
                     padding: 6px 18px;
                     border-radius: 20px;
@@ -79,7 +76,7 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                 }}
                 .active {{ background: #065F46; color: #34D399; animation: pulse 1.5s infinite; }}
                 .inactive {{ background: #374151; color: #9CA3AF; }}
-                .error-state {{ background: #7F1D1D; color: #FCA5A5; }}
+                .error-badge {{ background: #7F1D1D; color: #FCA5A5; }}
                 @keyframes pulse {{
                     0% {{ box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); }}
                     70% {{ box-shadow: 0 0 0 12px rgba(52, 211, 153, 0); }}
@@ -87,7 +84,7 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                 }}
                 #logBox {{
                     margin-top: 20px;
-                    background: rgba(0,0,0,0.4);
+                    background: rgba(0,0,0,0.5);
                     border-radius: 10px;
                     padding: 15px;
                     font-size: 14px;
@@ -99,17 +96,17 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
             </style>
         </head>
         <body>
-            <div class="call-container">
-                <div id="status" class="status-badge inactive">🔴 Call Disconnected</div>
-                <h2>Interactive Tajweed Coaching Call</h2>
-                <p style="color: #9CA3AF;">The AI acts as your live Quran teacher. Speak directly into your microphone—it will interrupt and correct you by voice if you make a mistake.</p>
+            <div class="call-card">
+                <div id="status" class="badge inactive">🔴 Offline</div>
+                <h2>Live Voice Call Connected</h2>
+                <p style="color: #9CA3AF;">Continuous bidirectional streaming active. Speak directly into your mic.</p>
                 
-                <button id="startBtn" class="btn btn-start" onclick="connectLiveCall()">📞 Start Voice Call</button>
-                <button id="stopBtn" class="btn btn-stop" onclick="disconnectLiveCall()" style="display:none;">🔴 End Call</button>
+                <button id="startBtn" class="btn btn-start" onclick="initiateCall()">📞 Start Live Call</button>
+                <button id="stopBtn" class="btn btn-stop" onclick="endCall()" style="display:none;">🔴 End Call</button>
 
                 <div id="logBox">
-                    <b>Live Call Feed:</b>
-                    <p id="statusText" style="color: #9CA3AF; margin-top: 5px;">Click 'Start Voice Call' to initiate live streaming...</p>
+                    <b>Live Feed:</b>
+                    <p id="statusMsg" style="color: #9CA3AF; margin-top: 5px;">Ready to initiate WebSocket stream.</p>
                 </div>
             </div>
 
@@ -120,32 +117,37 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                 let audioCtx;
                 let micStream;
                 let scriptProcessor;
+                let nextPlayTime = 0;
 
-                async function connectLiveCall() {{
-                    document.getElementById('statusText').innerText = "Requesting microphone access...";
+                async function initiateCall() {{
+                    document.getElementById('statusMsg').innerText = "Initializing Audio Hardware...";
                     
                     try {{
+                        audioCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate: 16000 }});
+                        await audioCtx.resume();
+                        
                         micStream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
                     }} catch (err) {{
-                        showError("Microphone access denied or unavailable: " + err.message);
+                        setUIError("Microphone Access Error: " + err.message);
                         return;
                     }}
 
-                    document.getElementById('statusText').innerText = "Connecting to Gemini Multimodal Live API...";
+                    document.getElementById('statusMsg').innerText = "Connecting to Gemini 2.0 Live WebSocket...";
                     
                     const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${{API_KEY}}`;
                     
                     try {{
                         ws = new WebSocket(wsUrl);
-                        
+
                         ws.onopen = () => {{
                             document.getElementById('startBtn').style.display = 'none';
                             document.getElementById('stopBtn').style.display = 'inline-block';
-                            document.getElementById('status').className = 'status-badge active';
-                            document.getElementById('status').innerText = '🟢 LIVE CALL CONNECTED';
-                            document.getElementById('statusText').innerText = "Call active. Start reciting out loud!";
-                            
-                            const setupMsg = {{
+                            document.getElementById('status').className = 'badge active';
+                            document.getElementById('status').innerText = '🟢 CALL LIVE';
+                            document.getElementById('statusMsg').innerText = "Call Active. Start reciting out loud!";
+
+                            // Send setup frame for Gemini 2.0 Flash Realtime
+                            const setupConfig = {{
                                 setup: {{
                                     model: "models/gemini-2.0-flash-exp",
                                     generationConfig: {{
@@ -158,59 +160,51 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                                     }},
                                     systemInstruction: {{
                                         parts: [{{
-                                            text: `You are an expert, strict, real-time Quran Tajweed Teacher. The user is practicing the verse: "${{TARGET_VERSE}}". Listen continuously to their recitation in Arabic. The instant they mispronounce a word, make a Tajweed error, or skip a letter, interrupt them immediately in voice and explain the correct pronunciation and Makhraj clearly and briefly.`
+                                            text: `You are an expert Quran Tajweed Teacher. The user is practicing: "${{TARGET_VERSE}}". Listen continuously to their voice in real-time. If they mispronounce a word, mess up a vowel, or make a Tajweed error, interrupt them instantly by voice to correct them.`
                                         }}]
                                     }}
                                 }}
                             }};
-                            ws.send(JSON.stringify(setupMsg));
-                            startMicStreaming();
+                            ws.send(JSON.stringify(setupConfig));
+                            streamMicData();
                         }};
 
                         ws.onmessage = async (event) => {{
                             try {{
-                                let data;
-                                if (event.data instanceof Blob) {{
-                                    data = JSON.parse(await event.data.text());
-                                }} else {{
-                                    data = JSON.parse(event.data);
-                                }}
-
-                                if (data.serverContent && data.serverContent.modelTurn) {{
-                                    const parts = data.serverContent.modelTurn.parts;
-                                    for (let part of parts) {{
-                                        if (part.inlineData && part.inlineData.data) {{
-                                            playAudioChunk(part.inlineData.data);
-                                            document.getElementById('statusText').innerText = "AI Teacher is speaking feedback...";
+                                let msg = event.data instanceof Blob ? JSON.parse(await event.data.text()) : JSON.parse(event.data);
+                                if (msg.serverContent && msg.serverContent.modelTurn) {{
+                                    const parts = msg.serverContent.modelTurn.parts;
+                                    for (let p of parts) {{
+                                        if (p.inlineData && p.inlineData.data) {{
+                                            playIncomingAudio(p.inlineData.data);
+                                            document.getElementById('statusMsg').innerText = "AI Teacher is speaking feedback...";
                                         }}
                                     }}
                                 }}
                             }} catch (e) {{
-                                console.error("Error parsing message", e);
+                                console.error("Parse error:", e);
                             }}
                         }};
 
-                        ws.onclose = (event) => {{
-                            if (event.code !== 1000) {{
-                                showError(`WebSocket closed unexpectedly (Code: ${{event.code}}, Reason: ${{event.reason || 'Authentication or API Key restriction'}}).`);
+                        ws.onclose = (e) => {{
+                            if (e.code !== 1000) {{
+                                setUIError(`WebSocket Closed: Code ${{e.code}} (${{e.reason || 'Check API key access to gemini-2.0-flash-exp'}}).`);
                             }} else {{
-                                disconnectLiveCall();
+                                endCall();
                             }}
                         }};
 
-                        ws.onerror = (err) => {{
-                            showError("WebSocket encountered a connection error.");
+                        ws.onerror = (e) => {{
+                            setUIError("WebSocket encountered a network error.");
                         }};
 
                     }} catch (e) {{
-                        showError("Error starting call: " + e.message);
+                        setUIError("Initialization failed: " + e.message);
                     }}
                 }}
 
-                async function startMicStreaming() {{
-                    audioCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate: 16000 }});
+                function streamMicData() {{
                     const source = audioCtx.createMediaStreamSource(micStream);
-                    
                     scriptProcessor = audioCtx.createScriptProcessor(2048, 1, 1);
                     source.connect(scriptProcessor);
                     scriptProcessor.connect(audioCtx.destination);
@@ -218,10 +212,10 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                     scriptProcessor.onaudioprocess = (e) => {{
                         if (!ws || ws.readyState !== WebSocket.OPEN) return;
                         
-                        const inputData = e.inputBuffer.getChannelData(0);
-                        const pcm16 = new Int16Array(inputData.length);
-                        for (let i = 0; i < inputData.length; i++) {{
-                            pcm16[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
+                        const input = e.inputBuffer.getChannelData(0);
+                        const pcm16 = new Int16Array(input.length);
+                        for (let i = 0; i < input.length; i++) {{
+                            pcm16[i] = Math.max(-1, Math.min(1, input[i])) * 0x7FFF;
                         }}
                         
                         let binary = '';
@@ -229,74 +223,66 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                         for (let i = 0; i < bytes.byteLength; i++) {{
                             binary += String.fromCharCode(bytes[i]);
                         }}
-                        const base64Audio = btoa(binary);
 
-                        const audioMsg = {{
+                        ws.send(JSON.stringify({{
                             realtimeInput: {{
                                 mediaChunks: [{{
                                     mimeType: "audio/pcm;rate=16000",
-                                    data: base64Audio
+                                    data: btoa(binary)
                                 }}]
                             }}
-                        }};
-                        ws.send(JSON.stringify(audioMsg));
+                        }}));
                     }};
                 }}
 
-                function playAudioChunk(base64PCM) {{
+                function playIncomingAudio(base64Pcm) {{
                     try {{
-                        const binaryStr = atob(base64PCM);
-                        const len = binaryStr.length;
-                        const bytes = new Uint8Array(len);
-                        for (let i = 0; i < len; i++) {{
-                            bytes[i] = binaryStr.charCodeAt(i);
-                        }}
-                        const int16Array = new Int16Array(bytes.buffer);
+                        const str = atob(base64Pcm);
+                        const bytes = new Uint8Array(str.length);
+                        for (let i = 0; i < str.length; i++) bytes[i] = str.charCodeAt(i);
                         
+                        const pcm16 = new Int16Array(bytes.buffer);
                         const outCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate: 24000 }});
-                        const buffer = outCtx.createBuffer(1, int16Array.length, 24000);
-                        const channelData = buffer.getChannelData(0);
-                        for (let i = 0; i < int16Array.length; i++) {{
-                            channelData[i] = int16Array[i] / 32768.0;
-                        }}
+                        const buffer = outCtx.createBuffer(1, pcm16.length, 24000);
+                        const channel = buffer.getChannelData(0);
+                        for (let i = 0; i < pcm16.length; i++) channel[i] = pcm16[i] / 32768.0;
 
                         const src = outCtx.createBufferSource();
                         src.buffer = buffer;
                         src.connect(outCtx.destination);
-                        src.start();
-                    }} catch (e) {{
-                        console.error("Audio playback error:", e);
+                        
+                        const now = outCtx.currentTime;
+                        nextPlayTime = Math.max(nextPlayTime, now);
+                        src.start(nextPlayTime);
+                        nextPlayTime += buffer.duration;
+                    }} catch (err) {{
+                        console.error("Playback error:", err);
                     }}
                 }}
 
-                function showError(msg) {{
-                    if (ws) ws.close();
-                    if (micStream) micStream.getTracks().forEach(track => track.stop());
-                    if (audioCtx) audioCtx.close();
-                    
-                    document.getElementById('startBtn').style.display = 'inline-block';
-                    document.getElementById('stopBtn').style.display = 'none';
-                    document.getElementById('status').className = 'status-badge error-state';
-                    document.getElementById('status').innerText = '⚠️ Connection Error';
-                    document.getElementById('statusText').innerText = msg;
+                function setUIError(msg) {{
+                    endCall();
+                    document.getElementById('status').className = 'badge error-badge';
+                    document.getElementById('status').innerText = '⚠️ Call Error';
+                    document.getElementById('statusMsg').innerText = msg;
                 }}
 
-                function disconnectLiveCall() {{
+                function endCall() {{
                     if (ws) ws.close();
-                    if (micStream) micStream.getTracks().forEach(track => track.stop());
+                    if (micStream) micStream.getTracks().forEach(t => t.stop());
                     if (audioCtx) audioCtx.close();
-                    
+
                     document.getElementById('startBtn').style.display = 'inline-block';
                     document.getElementById('stopBtn').style.display = 'none';
-                    document.getElementById('status').className = 'status-badge inactive';
-                    document.getElementById('status').innerText = '🔴 Call Disconnected';
-                    document.getElementById('statusText').innerText = 'Call ended. Click Start to try again.';
+                    document.getElementById('status').className = 'badge inactive';
+                    document.getElementById('status').innerText = '🔴 Offline';
                 }}
             </script>
         </body>
         </html>
         """
-        components.html(live_audio_html, height=520)
+        # Critical Streamlit parameter: allow="microphone"
+        components.html(live_audio_html, height=520, allow="microphone")
 
 # 📖 BROWSE QURAN
 elif nav == "📖 Browse Quran":
