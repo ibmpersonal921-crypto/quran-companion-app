@@ -2,7 +2,7 @@ import streamlit as st
 import helpers
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="Quran Companion - Live Voice", page_icon="📖", layout="wide")
+st.set_page_config(page_title="Quran Companion - Realtime Audio Call", page_icon="📖", layout="wide")
 
 # Load CSS
 try:
@@ -12,169 +12,266 @@ except Exception:
     pass
 
 # Session State
-if "points" not in st.session_state:
-    st.session_state.points = 120
-if "streak" not in st.session_state:
-    st.session_state.streak = 5
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# Navigation
 with st.sidebar:
     st.markdown("## 📖 Quran Companion")
-    st.caption("Live Interactive Voice Call & Tajweed Tutor")
+    st.caption("Live AI Tajweed Teacher")
     st.markdown("---")
-    nav = st.radio("Navigation", ["📞 Live AI Voice Call", "📖 Browse Quran", "🧠 AI Chat Companion"], label_visibility="collapsed")
+    nav = st.radio("Navigation", ["📞 Live Voice Call (Real-time Audio)", "📖 Browse Quran", "🧠 AI Chat Companion"], label_visibility="collapsed")
     st.markdown("---")
     reciter_key = st.selectbox("Preferred Qari", list(helpers.RECITERS.keys()), format_func=lambda x: helpers.RECITERS[x])
 
 api_key = helpers.get_secret("GEMINI_API_KEY")
 
-# 📞 LIVE AI VOICE CALL PAGE
-if nav == "📞 Live AI Voice Call":
-    st.markdown("<h1>📞 Live Interactive Tajweed Voice Call</h1>", unsafe_allow_html=True)
-    st.caption("Start a live voice call with your AI Quran Teacher. Recite any Surah out loud, and the AI will listen continuously and point out pronunciation (Talaffuz) and Makhraj mistakes.")
+# 📞 LIVE REALTIME VOICE CALL
+if nav == "📞 Live Voice Call (Real-time Audio)":
+    st.markdown("<h1>📞 Real-time Voice Call with AI Tajweed Teacher</h1>", unsafe_allow_html=True)
+    st.caption("Start a duplex audio call. Recite out loud—the AI will listen continuously and speak back immediately to correct any Tajweed or pronunciation mistake.")
 
-    target_verse = st.text_input("Verse to Recite / Practice:", "إِذَا جَآءَ نَصْرُ ٱللَّهِ وَٱلْفَتْحُ")
+    target_verse = st.text_input("Verse to Recite:", "إِذَا جَآءَ نَصْرُ ٱللَّهِ وَٱلْفَتْحُ")
 
     st.markdown(f"""
-    <div class="custom-card" style="text-align: center;">
+    <div class="custom-card" style="text-align: center; margin-bottom: 20px;">
         <span style="color: #34D399; font-weight: bold;">Target Recitation Verse:</span>
         <div class="arabic-text" style="font-size: 32px; margin: 15px 0;">{target_verse}</div>
     </div>
     """, unsafe_allow_html=True)
 
     if not api_key:
-        st.error("⚠️ Please set GEMINI_API_KEY in your Streamlit secrets to start the live call.")
+        st.error("⚠️ GEMINI_API_KEY is missing from Streamlit secrets.")
     else:
-        # Live HTML5/WebSocket Voice Call Interface Component
-        live_call_html = f"""
+        # Gemini WebSocket Realtime Audio HTML/JS Component
+        live_audio_html = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <style>
-                .call-box {{
+                .call-container {{
                     background: #07150E;
                     border: 2px solid #34D399;
                     border-radius: 20px;
                     padding: 30px;
                     text-align: center;
-                    color: #E2E8F0;
-                    font-family: sans-serif;
-                }}
-                .btn-start {{
-                    background: #10B981;
                     color: white;
-                    border: none;
-                    padding: 15px 32px;
+                    font-family: Arial, sans-serif;
+                }}
+                .btn {{
+                    padding: 16px 36px;
                     font-size: 18px;
                     font-weight: bold;
-                    border-radius: 30px;
-                    cursor: pointer;
-                    margin: 10px;
-                    box-shadow: 0 0 15px rgba(52, 211, 153, 0.4);
-                }}
-                .btn-stop {{
-                    background: #EF4444;
-                    color: white;
+                    border-radius: 35px;
                     border: none;
-                    padding: 15px 32px;
-                    font-size: 18px;
-                    font-weight: bold;
-                    border-radius: 30px;
                     cursor: pointer;
                     margin: 10px;
+                    transition: 0.2s;
                 }}
+                .btn-start {{ background: #10B981; color: white; box-shadow: 0 0 15px rgba(16,185,129,0.4); }}
+                .btn-stop {{ background: #EF4444; color: white; }}
                 .status-badge {{
                     display: inline-block;
-                    padding: 6px 16px;
+                    padding: 6px 18px;
                     border-radius: 20px;
+                    font-weight: bold;
                     font-size: 14px;
                     margin-bottom: 15px;
-                    font-weight: bold;
                 }}
-                .recording {{ background: #065F46; color: #34D399; }}
-                .idle {{ background: #374151; color: #9CA3AF; }}
-                #transcript {{
+                .active {{ background: #065F46; color: #34D399; animation: pulse 1.5s infinite; }}
+                .inactive {{ background: #374151; color: #9CA3AF; }}
+                @keyframes pulse {{
+                    0% {{ box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); }}
+                    70% {{ box-shadow: 0 0 0 12px rgba(52, 211, 153, 0); }}
+                    100% {{ box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }}
+                }}
+                #logBox {{
                     margin-top: 20px;
-                    min-height: 80px;
-                    background: rgba(0,0,0,0.3);
-                    border-radius: 12px;
+                    background: rgba(0,0,0,0.4);
+                    border-radius: 10px;
                     padding: 15px;
+                    font-size: 14px;
+                    color: #A7F3D0;
+                    min-height: 80px;
                     text-align: left;
-                    font-size: 15px;
                 }}
             </style>
         </head>
         <body>
-            <div class="call-box">
-                <div id="status" class="status-badge idle">🔴 Offline</div>
-                <h3>Live Tajweed Coaching Call</h3>
-                <p style="color: #9CA3AF;">Click <b>Start Live Call</b> and speak directly into your microphone.</p>
+            <div class="call-container">
+                <div id="status" class="status-badge inactive">🔴 Call Disconnected</div>
+                <h2>Interactive Tajweed Coaching Call</h2>
+                <p style="color: #9CA3AF;">The AI acts as your live Quran teacher. Speak directly into your microphone—it will interrupt and correct you by voice if you make a mistake.</p>
                 
-                <button id="startBtn" class="btn-start" onclick="startCall()">📞 Start Live Call</button>
-                <button id="stopBtn" class="btn-stop" onclick="stopCall()" style="display:none;">🔴 End Call</button>
+                <button id="startBtn" class="btn btn-start" onclick="connectLiveCall()">📞 Start Voice Call</button>
+                <button id="stopBtn" class="btn btn-stop" onclick="disconnectLiveCall()" style="display:none;">🔴 End Call</button>
 
-                <div id="transcript">
-                    <b>Live Call Transcript & Mistakes Identified:</b>
-                    <p id="liveText" style="color: #34D399;">Waiting for call to connect...</p>
+                <div id="logBox">
+                    <b>Live Call Feed:</b>
+                    <p id="statusText" style="color: #9CA3AF; margin-top: 5px;">Click 'Start Voice Call' to initiate live bidirectional streaming...</p>
                 </div>
             </div>
 
             <script>
-                let mediaRecorder;
-                let audioChunks = [];
-                let isCalling = false;
-                let recognition;
+                const API_KEY = "{api_key}";
+                const TARGET_VERSE = "{target_verse}";
+                let ws;
+                let audioCtx;
+                let micStream;
+                let scriptProcessor;
 
-                // Speech Recognition API for continuous live audio parsing
-                if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {{
-                    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                    recognition = new SpeechRecognition();
-                    recognition.continuous = true;
-                    recognition.interimResults = true;
-                    recognition.lang = 'ar-SA';
-                }}
-
-                async function startCall() {{
+                async function connectLiveCall() {{
+                    document.getElementById('statusText').innerText = "Connecting to Gemini Live API...";
+                    
+                    // Gemini Multimodal Live WebSocket Endpoint
+                    const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${{API_KEY}}`;
+                    
                     try {{
-                        const stream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
-                        isCalling = true;
+                        ws = new WebSocket(wsUrl);
                         
-                        document.getElementById('startBtn').style.display = 'none';
-                        document.getElementById('stopBtn').style.display = 'inline-block';
-                        document.getElementById('status').className = 'status-badge recording';
-                        document.getElementById('status').innerText = '🟢 LIVE CALL ACTIVE';
-                        document.getElementById('liveText').innerText = 'Listening to your recitation... Speak now.';
-
-                        if (recognition) {{
-                            recognition.start();
-                            recognition.onresult = (event) => {{
-                                let interimTranscript = '';
-                                for (let i = event.resultIndex; i < event.results.length; ++i) {{
-                                    interimTranscript += event.results[i][0].transcript;
+                        ws.onopen = () => {{
+                            document.getElementById('startBtn').style.display = 'none';
+                            document.getElementById('stopBtn').style.display = 'inline-block';
+                            document.getElementById('status').className = 'status-badge active';
+                            document.getElementById('status').innerText = '🟢 LIVE CALL CONNECTED';
+                            document.getElementById('statusText').innerText = "Call active. Start reciting out loud!";
+                            
+                            // Send Session Setup Configuration
+                            const setupMsg = {{
+                                setup: {{
+                                    model: "models/gemini-2.0-flash-exp",
+                                    generationConfig: {{
+                                        responseModalities: ["AUDIO"],
+                                        speechConfig: {{
+                                            voiceConfig: {{
+                                                prebuiltVoiceConfig: {{ voiceName: "Aoede" }}
+                                            }}
+                                        }}
+                                    }},
+                                    systemInstruction: {{
+                                        parts: [{{
+                                            text: `You are an expert, strict, real-time Quran Tajweed Teacher. The user is practicing the verse: "${{TARGET_VERSE}}". Listen continuously to their recitation in Arabic. The instant they mispronounce a word, make a Tajweed error, or skip a letter, interrupt them immediately in voice and explain the correct pronunciation and Makhraj clearly and briefly.`
+                                        }}]
+                                    }}
                                 }}
-                                document.getElementById('liveText').innerText = 'You said: ' + interimTranscript;
                             }};
-                        }}
-                    }} catch (err) {{
-                        alert('Microphone permission required for Live Call: ' + err.message);
+                            ws.send(JSON.stringify(setupMsg));
+                            startMicStreaming();
+                        }};
+
+                        ws.onmessage = async (event) => {{
+                            try {{
+                                let data;
+                                if (event.data instanceof Blob) {{
+                                    data = JSON.parse(await event.data.text());
+                                }} else {{
+                                    data = JSON.parse(event.data);
+                                }}
+
+                                // Play real-time audio response from Gemini
+                                if (data.serverContent && data.serverContent.modelTurn) {{
+                                    const parts = data.serverContent.modelTurn.parts;
+                                    for (let part of parts) {{
+                                        if (part.inlineData && part.inlineData.data) {{
+                                            playAudioChunk(part.inlineData.data);
+                                            document.getElementById('statusText').innerText = "AI Teacher is speaking feedback...";
+                                        }}
+                                    }}
+                                }}
+                            }} catch (e) {{
+                                console.error("Error parsing message", e);
+                            }}
+                        }};
+
+                        ws.onclose = () => {{ disconnectLiveCall(); }};
+                        ws.onerror = (err) => {{
+                            document.getElementById('statusText').innerText = "Connection error. Ensure Gemini Multimodal Live API is enabled for your API Key.";
+                        }};
+
+                    }} catch (e) {{
+                        document.getElementById('statusText').innerText = "Error starting call: " + e.message;
                     }}
                 }}
 
-                function stopCall() {{
-                    isCalling = false;
-                    if (recognition) recognition.stop();
+                async function startMicStreaming() {{
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate: 16000 }});
+                    micStream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
+                    const source = audioCtx.createMediaStreamSource(micStream);
+                    
+                    scriptProcessor = audioCtx.createScriptProcessor(2048, 1, 1);
+                    source.connect(scriptProcessor);
+                    scriptProcessor.connect(audioCtx.destination);
+
+                    scriptProcessor.onaudioprocess = (e) => {{
+                        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                        
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        const pcm16 = new Int16Array(inputData.length);
+                        for (let i = 0; i < inputData.length; i++) {{
+                            pcm16[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
+                        }}
+                        
+                        // Convert PCM ArrayBuffer to Base64
+                        let binary = '';
+                        const bytes = new Uint8Array(pcm16.buffer);
+                        for (let i = 0; i < bytes.byteLength; i++) {{
+                            binary += String.fromCharCode(bytes[i]);
+                        }}
+                        const base64Audio = btoa(binary);
+
+                        const audioMsg = {{
+                            realtimeInput: {{
+                                mediaChunks: [{{
+                                    mimeType: "audio/pcm;rate=16000",
+                                    data: base64Audio
+                                }}]
+                            }}
+                        }};
+                        ws.send(JSON.stringify(audioMsg));
+                    }};
+                }}
+
+                function playAudioChunk(base64PCM) {{
+                    try {{
+                        const binaryStr = atob(base64PCM);
+                        const len = binaryStr.length;
+                        const bytes = new Uint8Array(len);
+                        for (let i = 0; i < len; i++) {{
+                            bytes[i] = binaryStr.charCodeAt(i);
+                        }}
+                        const int16Array = new Int16Array(bytes.buffer);
+                        
+                        const outCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate: 24000 }});
+                        const buffer = outCtx.createBuffer(1, int16Array.length, 24000);
+                        const channelData = buffer.getChannelData(0);
+                        for (let i = 0; i < int16Array.length; i++) {{
+                            channelData[i] = int16Array[i] / 32768.0;
+                        }}
+
+                        const src = outCtx.createBufferSource();
+                        src.buffer = buffer;
+                        src.connect(outCtx.destination);
+                        src.start();
+                    }} catch (e) {{
+                        console.error("Audio playback error:", e);
+                    }}
+                }}
+
+                function disconnectLiveCall() {{
+                    if (ws) ws.close();
+                    if (micStream) micStream.getTracks().forEach(track => track.stop());
+                    if (audioCtx) audioCtx.close();
+                    
                     document.getElementById('startBtn').style.display = 'inline-block';
                     document.getElementById('stopBtn').style.display = 'none';
-                    document.getElementById('status').className = 'status-badge idle';
-                    document.getElementById('status').innerText = '🔴 Call Ended';
+                    document.getElementById('status').className = 'status-badge inactive';
+                    document.getElementById('status').innerText = '🔴 Call Disconnected';
+                    document.getElementById('statusText').innerText = 'Call ended. Click Start to try again.';
                 }}
             </script>
         </body>
         </html>
         """
-        components.html(live_call_html, height=450)
+        components.html(live_audio_html, height=520)
 
 # 📖 BROWSE QURAN
 elif nav == "📖 Browse Quran":
