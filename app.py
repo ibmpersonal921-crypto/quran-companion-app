@@ -131,7 +131,7 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                         return;
                     }}
 
-                    document.getElementById('statusText').innerText = "Connecting to Gemini Live API...";
+                    document.getElementById('statusText').innerText = "Connecting to Gemini Multimodal Live API...";
                     
                     const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${{API_KEY}}`;
                     
@@ -147,7 +147,7 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                             
                             const setupMsg = {{
                                 setup: {{
-                                    model: "models/gemini-2.0-flash",
+                                    model: "models/gemini-2.0-flash-exp",
                                     generationConfig: {{
                                         responseModalities: ["AUDIO"],
                                         speechConfig: {{
@@ -199,7 +199,7 @@ if nav == "📞 Live Voice Call (Real-time Audio)":
                         }};
 
                         ws.onerror = (err) => {{
-                            showError("WebSocket encountered a connection error. Verify your GEMINI_API_KEY supports Gemini 2.0 Live API.");
+                            showError("WebSocket encountered a connection error.");
                         }};
 
                     }} catch (e) {{
