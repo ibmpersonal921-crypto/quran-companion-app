@@ -71,7 +71,7 @@ def ask_llm(messages):
         return "Error: GROQ_API_KEY is not set in Streamlit secrets."
     
     payload = {
-        "model": "llama-3.1-8b-instant",
+        "model": "llama3-8b-8192",
         "messages": messages,
         "temperature": 0.2
     }
