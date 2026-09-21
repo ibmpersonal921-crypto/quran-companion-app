@@ -1,6 +1,6 @@
-streamlit>=1.31.0
-requests>=2.31.0
-streamlit-mic-recorder>=0.0.8
-SpeechRecognition>=3.10.0
-gTTS>=2.5.0
-pydub>=0.25.1
+streamlit==1.31.1
+anthropic==0.39.0
+requests==2.31.0
+python-dotenv==1.0.1
+faster-whisper==1.0.1
+gTTS==2.5.1
