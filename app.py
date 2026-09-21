@@ -1,332 +1,108 @@
 import streamlit as st
-import helpers
-import streamlit.components.v1 as components
+from config import APP_NAME, APP_TAGLINE, APP_ICON, DAILY_GOAL_POINTS
+from utils.helpers import inject_css, page_header, compute_streak
+from database import db
+from services import quran_api
 
-st.set_page_config(page_title="Quran Companion - Realtime Audio Call", page_icon="📖", layout="wide")
-
-# Load CSS
-try:
-    with open("styles/emerald_theme.css") as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-except Exception:
-    pass
-
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+st.set_page_config(page_title=f"{APP_NAME} — Dashboard", page_icon=APP_ICON, layout="wide")
+db.init_db()
+inject_css()
 
 with st.sidebar:
-    st.markdown("## 📖 Quran Companion")
-    st.caption("Live AI Tajweed Teacher")
-    st.markdown("---")
-    nav = st.radio("Navigation", ["📞 Live Voice Call", "📖 Browse Quran", "🧠 AI Chat Companion"], label_visibility="collapsed")
-    st.markdown("---")
-    reciter_key = st.selectbox("Preferred Qari", list(helpers.RECITERS.keys()), format_func=lambda x: helpers.RECITERS[x])
-
-api_key = helpers.get_secret("GEMINI_API_KEY")
-
-# 📞 LIVE REALTIME VOICE CALL
-if nav == "📞 Live Voice Call":
-    st.markdown("<h1>📞 Real-Time Live Voice Call</h1>", unsafe_allow_html=True)
-    st.caption("Full-duplex audio call with Gemini 2.0 Live API. Recite continuously out loud—the AI will listen in real time and interrupt via voice if you make a mistake.")
-
-    target_verse = st.text_input("Verse to Practice:", "إِذَا جَآءَ نَصْرُ ٱللَّهِ وَٱلْفَتْحُ")
-
     st.markdown(f"""
-    <div class="custom-card" style="text-align: center; margin-bottom: 20px;">
-        <span style="color: #34D399; font-weight: bold;">Target Recitation Verse:</span>
-        <div class="arabic-text" style="font-size: 32px; margin: 15px 0;">{target_verse}</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+        <span style="font-size:1.8rem;">{APP_ICON}</span>
+        <div>
+            <div style="font-weight:700;font-size:1.05rem;color:#f4f7f5;">{APP_NAME}</div>
+            <div style="font-size:0.78rem;color:#7e9186;">{APP_TAGLINE}</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
+    st.markdown("<hr class='qsc-divider'/>", unsafe_allow_html=True)
 
-    if not api_key:
-        st.error("⚠️ GEMINI_API_KEY is missing from Streamlit secrets.")
-    else:
-        live_audio_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                .call-card {{
-                    background: #07150E;
-                    border: 2px solid #34D399;
-                    border-radius: 20px;
-                    padding: 30px;
-                    text-align: center;
-                    color: white;
-                    font-family: system-ui, -apple-system, sans-serif;
-                }}
-                .btn {{
-                    padding: 16px 36px;
-                    font-size: 18px;
-                    font-weight: bold;
-                    border-radius: 35px;
-                    border: none;
-                    cursor: pointer;
-                    margin: 10px;
-                }}
-                .btn-start {{ background: #10B981; color: white; box-shadow: 0 0 15px rgba(16,185,129,0.4); }}
-                .btn-stop {{ background: #EF4444; color: white; }}
-                .badge {{
-                    display: inline-block;
-                    padding: 6px 18px;
-                    border-radius: 20px;
-                    font-weight: bold;
-                    font-size: 14px;
-                    margin-bottom: 15px;
-                }}
-                .active {{ background: #065F46; color: #34D399; animation: pulse 1.5s infinite; }}
-                .inactive {{ background: #374151; color: #9CA3AF; }}
-                .error-badge {{ background: #7F1D1D; color: #FCA5A5; }}
-                @keyframes pulse {{
-                    0% {{ box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); }}
-                    70% {{ box-shadow: 0 0 0 12px rgba(52, 211, 153, 0); }}
-                    100% {{ box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }}
-                }}
-                #logBox {{
-                    margin-top: 20px;
-                    background: rgba(0,0,0,0.5);
-                    border-radius: 10px;
-                    padding: 15px;
-                    font-size: 14px;
-                    color: #A7F3D0;
-                    min-height: 80px;
-                    text-align: left;
-                    word-break: break-word;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="call-card">
-                <div id="status" class="badge inactive">🔴 Offline</div>
-                <h2>Live Voice Call Connected</h2>
-                <p style="color: #9CA3AF;">Continuous bidirectional streaming active. Speak directly into your mic.</p>
-                
-                <button id="startBtn" class="btn btn-start" onclick="initiateCall()">📞 Start Live Call</button>
-                <button id="stopBtn" class="btn btn-stop" onclick="endCall()" style="display:none;">🔴 End Call</button>
+top_l, top_r = st.columns([3, 2])
+with top_l:
+    page_header("Dashboard", "Welcome back — here's your study space for today.", "🏠")
+with top_r:
+    st.write("")
+    quick_q = st.text_input("search", placeholder="Search or ask AI (e.g., 'Al-Fatiha tafsir')", label_visibility="collapsed")
+    if quick_q:
+        st.session_state["prefill_chat_question"] = quick_q
+        st.info("Open **AI Companion** in the sidebar — your question is ready there. 🤖")
 
-                <div id="logBox">
-                    <b>Live Feed:</b>
-                    <p id="statusMsg" style="color: #9CA3AF; margin-top: 5px;">Ready to initiate WebSocket stream.</p>
-                </div>
-            </div>
+completion_dates = db.get_all_completion_dates()
+streak = compute_streak(completion_dates)
+total_points = db.get_total_points()
+points_today = db.get_points_today()
+goals_today = db.get_goals_for_date()
+done_today = sum(1 for g in goals_today if g["is_done"])
 
-            <script>
-                const API_KEY = "{api_key}";
-                const TARGET_VERSE = "{target_verse}";
-                let ws;
-                let audioCtx;
-                let micStream;
-                let scriptProcessor;
-                let nextPlayTime = 0;
+s1, s2, s3, s4 = st.columns(4)
+stats = [
+    (s1, "🔥", streak, "Day Streak"),
+    (s2, "⭐", total_points, "Total Points"),
+    (s3, "✅", f"{done_today}/{len(goals_today)}", "Goals Today"),
+    (s4, "➕", points_today, "Points Today"),
+]
+for col, emoji, value, label in stats:
+    with col:
+        st.markdown(f"""<div class="qsc-stat"><div class="value">{emoji} {value}</div><div class="label">{label}</div></div>""", unsafe_allow_html=True)
 
-                async function initiateCall() {{
-                    document.getElementById('statusMsg').innerText = "Initializing Audio Hardware...";
-                    
-                    try {{
-                        audioCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate: 16000 }});
-                        await audioCtx.resume();
-                        
-                        micStream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
-                    }} catch (err) {{
-                        setUIError("Microphone Access Error: " + err.message);
-                        return;
-                    }}
+st.write("")
 
-                    document.getElementById('statusMsg').innerText = "Connecting to Gemini 2.0 Live WebSocket...";
-                    
-                    const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${{API_KEY}}`;
-                    
-                    try {{
-                        ws = new WebSocket(wsUrl);
+with st.spinner("Loading today's verse..."):
+    verse = quran_api.get_verse_of_the_day()
+    st.markdown('<div class="qsc-card">', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="qsc-card-header">
+        <span class="qsc-label">Verse of the day</span>
+        <span class="qsc-vod-tag">{verse.get('label','')}</span>
+    </div>
+    """, unsafe_allow_html=True)
+    if verse.get("arabic"):
+        st.markdown(f'<div class="arabic-text" style="font-size:1.7rem;">{verse["arabic"]}</div>', unsafe_allow_html=True)
+    if verse.get("transliteration"):
+        st.markdown(f'<p style="color:#b9c9c0;font-style:italic;margin-top:14px;">{verse["transliteration"]}</p>', unsafe_allow_html=True)
+    st.markdown(f'<p style="color:#f4f7f5;">{verse.get("english", "")}</p>', unsafe_allow_html=True)
+    with st.expander("🇵🇰 Show Urdu translation"):
+        st.markdown(f'<div class="urdu-text">{verse.get("urdu", "")}</div>', unsafe_allow_html=True)
+    
+    colA, colB = st.columns([1, 5])
+    with colA:
+        if st.button("➕ Add as today's goal"):
+            db.add_goal("memorize_verse", f"Learn {verse.get('label')}", DAILY_GOAL_POINTS["memorize_verse"])
+            st.success("Added to today's goals!")
+            st.rerun()
+st.markdown("</div>", unsafe_allow_html=True)
 
-                        ws.onopen = () => {{
-                            document.getElementById('startBtn').style.display = 'none';
-                            document.getElementById('stopBtn').style.display = 'inline-block';
-                            document.getElementById('status').className = 'badge active';
-                            document.getElementById('status').innerText = '🟢 CALL LIVE';
-                            document.getElementById('statusMsg').innerText = "Call Active. Start reciting out loud!";
+st.markdown('<div class="qsc-card">', unsafe_allow_html=True)
+st.markdown('<span class="qsc-label">Today\'s goals</span>', unsafe_allow_html=True)
+st.write("")
+with st.form("add_goal_form", clear_on_submit=True):
+    gcol1, gcol2 = st.columns([4, 1])
+    with gcol1:
+        goal_desc = st.text_input("New goal", placeholder="e.g. Learn Surah Al-Asr", label_visibility="collapsed")
+    with gcol2:
+        submitted = st.form_submit_button("Add goal", use_container_width=True)
+    if submitted and goal_desc.strip():
+        db.add_goal("custom", goal_desc.strip(), DAILY_GOAL_POINTS["custom"])
+        st.rerun()
 
-                            // Send setup frame for Gemini 2.0 Flash Realtime
-                            const setupConfig = {{
-                                setup: {{
-                                    model: "models/gemini-2.0-flash-exp",
-                                    generationConfig: {{
-                                        responseModalities: ["AUDIO"],
-                                        speechConfig: {{
-                                            voiceConfig: {{
-                                                prebuiltVoiceConfig: {{ voiceName: "Aoede" }}
-                                            }}
-                                        }}
-                                    }},
-                                    systemInstruction: {{
-                                        parts: [{{
-                                            text: `You are an expert Quran Tajweed Teacher. The user is practicing: "${{TARGET_VERSE}}". Listen continuously to their voice in real-time. If they mispronounce a word, mess up a vowel, or make a Tajweed error, interrupt them instantly by voice to correct them.`
-                                        }}]
-                                    }}
-                                }}
-                            }};
-                            ws.send(JSON.stringify(setupConfig));
-                            streamMicData();
-                        }};
-
-                        ws.onmessage = async (event) => {{
-                            try {{
-                                let msg = event.data instanceof Blob ? JSON.parse(await event.data.text()) : JSON.parse(event.data);
-                                if (msg.serverContent && msg.serverContent.modelTurn) {{
-                                    const parts = msg.serverContent.modelTurn.parts;
-                                    for (let p of parts) {{
-                                        if (p.inlineData && p.inlineData.data) {{
-                                            playIncomingAudio(p.inlineData.data);
-                                            document.getElementById('statusMsg').innerText = "AI Teacher is speaking feedback...";
-                                        }}
-                                    }}
-                                }}
-                            }} catch (e) {{
-                                console.error("Parse error:", e);
-                            }}
-                        }};
-
-                        ws.onclose = (e) => {{
-                            if (e.code !== 1000) {{
-                                setUIError(`WebSocket Closed: Code ${{e.code}} (${{e.reason || 'Check API key access to gemini-2.0-flash-exp'}}).`);
-                            }} else {{
-                                endCall();
-                            }}
-                        }};
-
-                        ws.onerror = (e) => {{
-                            setUIError("WebSocket encountered a network error.");
-                        }};
-
-                    }} catch (e) {{
-                        setUIError("Initialization failed: " + e.message);
-                    }}
-                }}
-
-                function streamMicData() {{
-                    const source = audioCtx.createMediaStreamSource(micStream);
-                    scriptProcessor = audioCtx.createScriptProcessor(2048, 1, 1);
-                    source.connect(scriptProcessor);
-                    scriptProcessor.connect(audioCtx.destination);
-
-                    scriptProcessor.onaudioprocess = (e) => {{
-                        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-                        
-                        const input = e.inputBuffer.getChannelData(0);
-                        const pcm16 = new Int16Array(input.length);
-                        for (let i = 0; i < input.length; i++) {{
-                            pcm16[i] = Math.max(-1, Math.min(1, input[i])) * 0x7FFF;
-                        }}
-                        
-                        let binary = '';
-                        const bytes = new Uint8Array(pcm16.buffer);
-                        for (let i = 0; i < bytes.byteLength; i++) {{
-                            binary += String.fromCharCode(bytes[i]);
-                        }}
-
-                        ws.send(JSON.stringify({{
-                            realtimeInput: {{
-                                mediaChunks: [{{
-                                    mimeType: "audio/pcm;rate=16000",
-                                    data: btoa(binary)
-                                }}]
-                            }}
-                        }}));
-                    }};
-                }}
-
-                function playIncomingAudio(base64Pcm) {{
-                    try {{
-                        const str = atob(base64Pcm);
-                        const bytes = new Uint8Array(str.length);
-                        for (let i = 0; i < str.length; i++) bytes[i] = str.charCodeAt(i);
-                        
-                        const pcm16 = new Int16Array(bytes.buffer);
-                        const outCtx = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate: 24000 }});
-                        const buffer = outCtx.createBuffer(1, pcm16.length, 24000);
-                        const channel = buffer.getChannelData(0);
-                        for (let i = 0; i < pcm16.length; i++) channel[i] = pcm16[i] / 32768.0;
-
-                        const src = outCtx.createBufferSource();
-                        src.buffer = buffer;
-                        src.connect(outCtx.destination);
-                        
-                        const now = outCtx.currentTime;
-                        nextPlayTime = Math.max(nextPlayTime, now);
-                        src.start(nextPlayTime);
-                        nextPlayTime += buffer.duration;
-                    }} catch (err) {{
-                        console.error("Playback error:", err);
-                    }}
-                }}
-
-                function setUIError(msg) {{
-                    endCall();
-                    document.getElementById('status').className = 'badge error-badge';
-                    document.getElementById('status').innerText = '⚠️ Call Error';
-                    document.getElementById('statusMsg').innerText = msg;
-                }}
-
-                function endCall() {{
-                    if (ws) ws.close();
-                    if (micStream) micStream.getTracks().forEach(t => t.stop());
-                    if (audioCtx) audioCtx.close();
-
-                    document.getElementById('startBtn').style.display = 'inline-block';
-                    document.getElementById('stopBtn').style.display = 'none';
-                    document.getElementById('status').className = 'badge inactive';
-                    document.getElementById('status').innerText = '🔴 Offline';
-                }}
-            </script>
-        </body>
-        </html>
-        """
-        # Critical Streamlit parameter: allow="microphone"
-        components.html(live_audio_html, height=520, allow="microphone")
-
-# 📖 BROWSE QURAN
-elif nav == "📖 Browse Quran":
-    st.markdown("<h1>Browse Quran</h1>", unsafe_allow_html=True)
-    surahs = helpers.get_surahs()
-    if surahs:
-        s_map = {f"{s['number']}. {s['en']} ({s['meaning']})": s["number"] for s in surahs}
-        s_choice = st.selectbox("Select Surah", list(s_map.keys()))
-        s_num = s_map[s_choice]
-        verses = helpers.get_verses(s_num)
-        audio_map = helpers.get_audio_urls(s_num, reciter_key)
-        
-        st.markdown(f"### Reciter: {helpers.RECITERS[reciter_key]}")
-        if 1 in audio_map:
-            st.audio(audio_map[1])
-            
-        st.markdown("---")
-        for v in verses:
-            st.markdown(f"""
-            <div class="custom-card">
-                <div style="color: #34D399; font-size: 13px;">Verse {v['n']}</div>
-                <div class="arabic-text">{v['ar']}</div>
-                <div class="transliteration">{v['tr']}</div>
-                <div class="translation">{v['en']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            if v["n"] in audio_map:
-                st.audio(audio_map[v["n"]])
-
-# 🧠 AI CHAT COMPANION
-elif nav == "🧠 AI Chat Companion":
-    st.markdown("<h1>AI Islamic Scholar</h1>", unsafe_allow_html=True)
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-            
-    if prompt := st.chat_input("Ask any question about Tafseer, Quran, or Hadith..."):
-        st.session_state.chat_history.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-            
-        with st.chat_message("assistant"):
-            with st.spinner("Analyzing..."):
-                messages = [{"role": "system", "content": "You are a knowledgeable Islamic and Quranic scholar."}]
-                messages.extend(st.session_state.chat_history)
-                reply = helpers.ask_llm(messages)
-                st.markdown(reply)
+if not goals_today:
+    st.caption("No goals yet today — add one above.")
+else:
+    for g in goals_today:
+        gc1, gc2, gc3 = st.columns([0.5, 5, 1])
+        with gc1:
+            checked = st.checkbox("", value=bool(g["is_done"]), key=f"goal_{g['id']}")
+            if checked != bool(g["is_done"]):
+                db.toggle_goal(g["id"], checked)
+                st.rerun()
+        with gc2:
+            style = "text-decoration:line-through;color:#7e9186;" if g["is_done"] else "color:#f4f7f5;"
+            st.markdown(f'<span style="{style}">{g["description"]}</span>', unsafe_allow_html=True)
+        with gc3:
+            st.markdown(f'<span class="qsc-tag">+{g["points"]} pts</span>', unsafe_allow_html=True)
+    progress = done_today / max(1, len(goals_today))
+    st.progress(progress, text=f"{done_today} of {len(goals_today)} goals complete today")
+st.markdown("</div>", unsafe_allow_html=True)
